@@ -1,0 +1,48 @@
+name: token-refresh
+
+# Threads のトークン（60日で切れる）を毎週自動で新しいものに取りかえる。
+# 新しいトークンは TOKEN_KEY で鍵をかけて token.enc に保存する（公開リポジトリでも中身は読めない）。
+
+on:
+  schedule:
+    - cron: "0 1 * * 0"   # 毎週日曜 01:00 UTC ＝ 09:00 セブ・香港
+  workflow_dispatch:        # 手動でも実行できる（Actions タブの「Run workflow」）
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-post        # 投稿と同時に動かない
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Refresh token
+        env:
+          TOKEN_KEY: ${{ secrets.TOKEN_KEY }}
+          FALLBACK: ${{ secrets.THREADS_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$TOKEN_KEY" ]; then echo "❌ Secret の TOKEN_KEY がありません"; exit 1; fi
+          T=""
+          if [ -f token.enc ]; then
+            T=$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -a -A -pass env:TOKEN_KEY -in token.enc 2>/dev/null) || T=""
+          fi
+          if [ -z "$T" ]; then echo "token.enc が使えないので、Secret の THREADS_ACCESS_TOKEN から取りかえます"; T="$FALLBACK"; fi
+          echo "::add-mask::$T"
+          NEW="$RUNNER_TEMP/new_token"
+          THREADS_ACCESS_TOKEN="$T" python refresh_token.py "$NEW"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -salt -a -A -pass env:TOKEN_KEY -in "$NEW" -out token.enc
+          rm -f "$NEW"
+      - name: Save
+        run: |
+          git config user.name "autopost-bot"
+          git config user.email "autopost-bot@users.noreply.github.com"
+          git add token.enc token_status.json
+          git diff --cached --quiet || git commit -m "token refreshed: $(date -u +%Y-%m-%d)"
+          git pull --rebase
+          git push
