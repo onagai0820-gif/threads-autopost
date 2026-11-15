@@ -2,12 +2,14 @@
 """queue.json の「今日の分」を Threads に投稿する（GitHub Actions から毎日実行）。
 
 - 投稿するのは status が "approved" で、date が今日（セブ時間）以前のものを1本だけ
+- 投稿枠は 17時（いつもの予定表）と 20時（旅先のリアルタイム）の2つ。item の "slot" で分ける（無ければ "17"）
 - 画像は images/ に置き、raw.githubusercontent.com の公開URLで渡す（1枚=画像、2枚以上=カルーセル）
 - reply があれば、投稿のあと自分の返信としてぶら下げる（リンク用）
 - 終わったら queue.json に posted / thread_id を書き戻す（コミットは workflow 側）
 
 必要な環境変数: THREADS_ACCESS_TOKEN, THREADS_USER_ID, GITHUB_REPOSITORY
-  --dry   投稿せずに、今日投稿されるものを表示するだけ
+  --slot 17|20   どちらの枠を出すか（省略時は 17）
+  --dry          投稿せずに、今日投稿されるものを表示するだけ
 """
 from __future__ import print_function
 import datetime, json, os, sys, time, urllib.error, urllib.parse, urllib.request
@@ -81,14 +83,16 @@ def publish(uid, item):
 
 def main():
     dry = "--dry" in sys.argv
+    slot = sys.argv[sys.argv.index("--slot") + 1] if "--slot" in sys.argv else "17"
     q = json.load(open(QUEUE, encoding="utf-8"))
     today = datetime.datetime.now(CEBU).strftime("%Y-%m-%d")
-    due = [i for i in q["items"] if i.get("status") == "approved" and i["date"] <= today]
+    due = [i for i in q["items"] if i.get("status") == "approved" and i["date"] <= today
+           and str(i.get("slot", "17")) == slot]
     if not due:
-        print("今日（%s）投稿するものはありません。" % today)
+        print("今日（%s）の %s時の枠で投稿するものはありません。" % (today, slot))
         return
     item = sorted(due, key=lambda i: i["date"])[0]
-    print("投稿するもの: %s（予定日 %s / 画像 %d 枚）" % (item["id"], item["date"], len(item.get("images") or [])))
+    print("投稿するもの: %s（予定日 %s / %s時の枠 / 画像 %d 枚）" % (item["id"], item["date"], slot, len(item.get("images") or [])))
     print(item["text"])
     if dry:
         for im in item.get("images") or []:

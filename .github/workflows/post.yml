@@ -2,8 +2,14 @@ name: daily-post
 
 on:
   schedule:
-    - cron: "0 9 * * *"   # 毎日 09:00 UTC ＝ 17:00 セブ・香港（GitHub側の都合で数分〜数十分遅れることがある）
-  workflow_dispatch:       # 手動でも実行できる（Actions タブの「Run workflow」）
+    - cron: "0 9 * * *"    # 毎日 09:00 UTC ＝ 17:00 セブ・香港 → いつもの予定表（slot 17）
+    - cron: "0 12 * * *"   # 毎日 12:00 UTC ＝ 20:00 セブ・香港 → 旅先のリアルタイム（slot 20）
+    # GitHub側の都合で数分〜数十分遅れることがある
+  workflow_dispatch:        # 手動でも実行できる（Actions タブの「Run workflow」）
+    inputs:
+      slot:
+        description: "どちらの枠を出すか（17 か 20）"
+        default: "17"
 
 permissions:
   contents: write
@@ -23,11 +29,13 @@ jobs:
         env:
           THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
           THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
-        run: python post.py
+          SLOT: ${{ github.event_name == 'workflow_dispatch' && inputs.slot || (github.event.schedule == '0 12 * * *' && '20' || '17') }}
+        run: python post.py --slot "$SLOT"
       - name: Save queue.json
         run: |
           git config user.name "autopost-bot"
           git config user.email "autopost-bot@users.noreply.github.com"
           git add queue.json
-          git diff --cached --quiet || git commit -m "posted: $(date -u +%Y-%m-%d)"
+          git diff --cached --quiet || git commit -m "posted: $(date -u +%Y-%m-%d) slot ${{ github.event_name == 'workflow_dispatch' && inputs.slot || (github.event.schedule == '0 12 * * *' && '20' || '17') }}"
+          git pull --rebase
           git push
