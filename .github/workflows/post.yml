@@ -2,13 +2,14 @@ name: daily-post
 
 on:
   schedule:
-    - cron: "0 9 * * *"    # 毎日 09:00 UTC ＝ 17:00 セブ・香港 → いつもの予定表（slot 17）
-    - cron: "0 12 * * *"   # 毎日 12:00 UTC ＝ 20:00 セブ・香港 → 旅先のリアルタイム（slot 20）
-    # GitHub側の都合で数分〜数十分遅れることがある
+    # GitHub の予約実行はちょうどの時刻だと数時間遅れることがある（11/15 は7時間遅れた）。
+    # なので 17:00〜23:59（セブ）の間、15分おきに起動して、post.py が「今出すべきか」を判断する。
+    # ちょうどの時刻（:00）は混むので避けている。
+    - cron: "7,22,37,52 9-15 * * *"   # 09:07〜15:52 UTC ＝ 17:07〜23:52 セブ
   workflow_dispatch:        # 手動でも実行できる（Actions タブの「Run workflow」）
     inputs:
       slot:
-        description: "どちらの枠を出すか（17 か 20）"
+        description: "どちらの枠を出すか（17 か 20）。時間に関係なく出す"
         default: "17"
 
 permissions:
@@ -41,13 +42,14 @@ jobs:
       - name: Post today's item
         env:
           THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
-          SLOT: ${{ github.event_name == 'workflow_dispatch' && inputs.slot || (github.event.schedule == '0 12 * * *' && '20' || '17') }}
-        run: python post.py --slot "$SLOT"
+          MANUAL_SLOT: ${{ github.event_name == 'workflow_dispatch' && inputs.slot || '' }}
+        run: |
+          if [ -n "$MANUAL_SLOT" ]; then python post.py --slot "$MANUAL_SLOT" --force; else python post.py; fi
       - name: Save queue.json
         run: |
           git config user.name "autopost-bot"
           git config user.email "autopost-bot@users.noreply.github.com"
           git add queue.json
-          git diff --cached --quiet || git commit -m "posted: $(date -u +%Y-%m-%d) slot ${{ github.event_name == 'workflow_dispatch' && inputs.slot || (github.event.schedule == '0 12 * * *' && '20' || '17') }}"
+          git diff --cached --quiet || git commit -m "posted: $(TZ=Asia/Manila date +%Y-%m-%dT%H:%M)"
           git pull --rebase
           git push

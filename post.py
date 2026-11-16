@@ -8,7 +8,9 @@
 - 終わったら queue.json に posted / thread_id を書き戻す（コミットは workflow 側）
 
 必要な環境変数: THREADS_ACCESS_TOKEN, THREADS_USER_ID, GITHUB_REPOSITORY
-  --slot 17|20   どちらの枠を出すか（省略時は 17）
+  （引数なし）    今の時刻（セブ）から枠を決める：17:00〜19:59＝17、20:00〜23:59＝20
+  --slot 17|20   枠を指定する（それでも時間帯の外なら出さない）
+  --force        時間帯を無視する（手動実行用）。その枠が今日もう出ていれば出さないのは同じ
   --dry          投稿せずに、今日投稿されるものを表示するだけ
 """
 from __future__ import print_function
@@ -81,13 +83,40 @@ def publish(uid, item):
     return tid
 
 
+# 枠ごとに「出してよい時間帯」（セブ時間）。GitHub の予約実行は数時間遅れることがあるので、
+# 15分おきに起動して、時間帯の中で・その枠がまだ今日出ていなければ出す。時間帯を過ぎたら翌日に回す（深夜に出さない）。
+WINDOWS = {"17": (17, 20), "20": (20, 24)}
+
+
+def current_slot(now):
+    for slot, (a, b) in WINDOWS.items():
+        if a <= now.hour < b:
+            return slot
+    return None
+
+
 def main():
     dry = "--dry" in sys.argv
-    slot = sys.argv[sys.argv.index("--slot") + 1] if "--slot" in sys.argv else "17"
+    force = "--force" in sys.argv          # 手動実行：時間帯を無視する
+    now = datetime.datetime.now(CEBU)
+    today = now.strftime("%Y-%m-%d")
+    if "--slot" in sys.argv:
+        slot = sys.argv[sys.argv.index("--slot") + 1]
+    else:
+        slot = current_slot(now)
+    if not slot:
+        print("今（セブ %s）はどの枠の時間帯でもありません。" % now.strftime("%H:%M"))
+        return
+    a, b = WINDOWS[slot]
+    if not force and not (a <= now.hour < b):
+        print("今（セブ %s）は %s時の枠の時間帯（%d:00〜%d:00）ではないので出しません。" % (now.strftime("%H:%M"), slot, a, b))
+        return
     q = json.load(open(QUEUE, encoding="utf-8"))
-    today = datetime.datetime.now(CEBU).strftime("%Y-%m-%d")
-    due = [i for i in q["items"] if i.get("status") == "approved" and i["date"] <= today
-           and str(i.get("slot", "17")) == slot]
+    same = [i for i in q["items"] if str(i.get("slot", "17")) == slot]
+    if any(i.get("status") == "posted" and str(i.get("posted_at", "")).startswith(today) for i in same):
+        print("今日（%s）の %s時の枠はもう出ています。" % (today, slot))
+        return
+    due = [i for i in same if i.get("status") == "approved" and i["date"] <= today]
     if not due:
         print("今日（%s）の %s時の枠で投稿するものはありません。" % (today, slot))
         return

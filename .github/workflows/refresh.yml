@@ -5,7 +5,7 @@ name: token-refresh
 
 on:
   schedule:
-    - cron: "0 1 * * 0"   # 毎週日曜 01:00 UTC ＝ 09:00 セブ・香港
+    - cron: "23 1 * * 0"  # 毎週日曜 01:23 UTC ＝ 09:23 セブ・香港（ちょうどの時刻は混むので避ける）
   workflow_dispatch:        # 手動でも実行できる（Actions タブの「Run workflow」）
 
 permissions:
