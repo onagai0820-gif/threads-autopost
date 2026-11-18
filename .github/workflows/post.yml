@@ -1,16 +1,16 @@
 name: daily-post
 
 on:
+  # 起こし方は2つ。どちらで起きても、post.py が「今の時間帯の枠が、今日まだ出ていないか」を見て判断するので二重には出ない。
+  # ① 外の目覚まし（cron-job.org）が毎日 17:05/17:35/20:05/20:35（セブ）に「Run workflow」を押す ← メイン（11/18〜）
+  # ② GitHub の予約（予備）。このリポジトリではほとんど動かない（11/16〜17 は2日で2回、しかも時間外）
   schedule:
-    # GitHub の予約実行はちょうどの時刻だと数時間遅れることがある（11/15 は7時間遅れた）。
-    # なので 17:00〜23:59（セブ）の間、15分おきに起動して、post.py が「今出すべきか」を判断する。
-    # ちょうどの時刻（:00）は混むので避けている。
-    - cron: "7,22,37,52 9-15 * * *"   # 09:07〜15:52 UTC ＝ 17:07〜23:52 セブ
-  workflow_dispatch:        # 手動でも実行できる（Actions タブの「Run workflow」）
+    - cron: "7,37 9-15 * * *"   # 09:07〜15:37 UTC ＝ 17:07〜23:37 セブ（予備）
+  workflow_dispatch:
     inputs:
       slot:
-        description: "どちらの枠を出すか（17 か 20）。時間に関係なく出す"
-        default: "17"
+        description: "空のまま＝今の時刻で判断（目覚まし用）。17 か 20 を入れると時間に関係なく出す"
+        default: ""
 
 permissions:
   contents: write
@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main   # 順番待ちの間に別の回が投稿していても、最新の予定表を読む（二重投稿を防ぐ）
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
